@@ -1,3 +1,4 @@
+############ Construct a kernel matrix ############
 k.matrix <- function(X = X, kernel.type = c("linear","nonhompolynom", "Gaussian", 
                                               "Laplacian", "sigmoid"),
                      kernel.degree = 2, kernel.RBF.sigma = 1, sigmoid.c = 0){
@@ -5,35 +6,35 @@ k.matrix <- function(X = X, kernel.type = c("linear","nonhompolynom", "Gaussian"
    kernel.type <- match.arg(kernel.type, c("linear","nonhompolynom", "Gaussian", 
                                           "Laplacian", "sigmoid"), several.ok = FALSE)
 
-  if (kernel.type == "linear"){
-    K  <- X %*% t(X)
+  if (kernel.type == "linear"){ 
+    K  <- X %*% t(X) ## Liner kernel
     
   } else if  (kernel.type == "nonhompolynom"){
     d  <- kernel.degree
-    K  <- (1 + X %*% t(X))^d
+    K  <- (1 + X %*% t(X))^d ## Nonhompolynomial kernel
     
   } else if (kernel.type == "Gaussian"){
-    K  <- exp(-as.matrix(dist(X)^2/kernel.RBF.sigma))
+    K  <- exp(-as.matrix(dist(X)^2/kernel.RBF.sigma)) ## Gaussian kernel
     
   } else if  (kernel.type == "Laplacian"){
-    K  <- exp(-as.matrix(dist(X)/kernel.RBF.sigma))
+    K  <- exp(-as.matrix(dist(X)/kernel.RBF.sigma)) ## Laplacian kernel
     
   } else if  (kernel.type == "sigmoid"){
-    K  <- tanh(1/ncol(X)*(X %*% t(X)) + sigmoid.c)
+    K  <- tanh(1/ncol(X)*(X %*% t(X)) + sigmoid.c) ## Sigmoid kernel
   }
   return(K)
 }
-  
+######################################################
  
- 
- 
+### Use package SMACOF for later optimization ###
 if (!require(smacof)) install.packages('smacof')
 library(smacof) # required for SMACOF majorization
 
+############ Weighted Kernel Ridge Regression Function ############
 wrr <- function(y = y, X = X, intercept = TRUE, lambda = 10^seq(-8, 8, length.out = 100), 
                 kernel.type = c("Gaussian","linear","nonhompolynom","Laplacian","sigmoid"), 
                 kernel.degree = 2, kernel.RBF.sigma = 1,
-                center = TRUE, scale = TRUE){
+                center = TRUE, scale = TRUE){ ## center = TRUE: mean is set as 0; scale = TRUE: standard diviation is set as 0
   const <- 0
   n   <- nrow(X)
   p <- ncol(X)
@@ -42,49 +43,53 @@ wrr <- function(y = y, X = X, intercept = TRUE, lambda = 10^seq(-8, 8, length.ou
   X <- s$X
   meanX <- s$meanX
   stdX <- s$stdX
-  if (intercept) const <- mean(y) # intercept
+  if (intercept) const <- mean(y)
   y <- y - const
  
-  
-  # Kernel ridge regression
+  ### Kernel ridge regression ###
   kernel.type <- match.arg(kernel.type,c("Gaussian","linear",
       "nonhompolynom","sigmoid","Laplacian"), several.ok = FALSE)
-  
+      
+  ### Use the function of constructing a kernel matrix (see the top) ###
   K <- k.matrix(X, kernel.type = kernel.type, kernel.degree = kernel.degree,
                  kernel.RBF.sigma = kernel.RBF.sigma)
 
-  # Get the weight matrix Dw
+  ### Get the weight matrix Dw ###
   alpha <- diag(K)
   Dissim <- (outer(alpha, alpha, "+") - 2 * K)^0.5
   
   res <- smacofConstraint(Dissim, constraint = "diagonal", 
-                          external = X, ndim = ncol(X)) # SMACOF majorization
+                          external = X, ndim = ncol(X)) ## Use SMACOF function for optimization of similarity
   
-  # variable weight matrix Dw
-  Dw <- res$C # XD_w = Z
+  Dw <- res$C ## weight matrix Dw (XDw = Z) 
   
+  ### tranform the weight matrix to penalty coefficient for weighted kernel ridge regression ###
   # penalty.coef = Dw^{-2}
   penalty.coef <- 1 /(t(Dw) %*% Dw)
   penalty.coef[is.infinite(penalty.coef)] <- 0
-
+  
+  ### Weighted kernel ridge regression ###
   betahat <- matrix(NA, nrow = ncol(X), ncol = length(lambda))
   yhat <- matrix(NA, nrow = nrow(X), ncol = length(lambda))
   
-  # k-fold cross-validation of weighted ridge regression
+  ### k-fold cross-validation ###
   for (i in 1:length(lambda)){
     w.lambda <- diag(lambda[i], ncol(X)) %*% penalty.coef
     betahat[, i] <- solve(t(X) %*% X + w.lambda, tol = 1e-40) %*% t(X) %*% (y - const)
     yhat[ ,i] <- X %*% betahat[ ,i] + const
   }
   
+  ### Return the result ###
   result <- (list (yhat= yhat, lambda = lambda, K = K, meanX = meanX, stdX = stdX, 
                    variable.weight = Dw, lambda.multiplier = penalty.coef,
                    betahat = betahat, constant = const, call = match.call()) ) 
   class(result) <- "wrr"
   return(result)
 }
+######################################################
 
 
+############### Prediction Function ###############
 #' Weighted Ridge Regression
 #' Does out-of-sample prediction for weighted ridge regression
  predict.wrr <- function(res, newX){
@@ -99,9 +104,10 @@ wrr <- function(y = y, X = X, intercept = TRUE, lambda = 10^seq(-8, 8, length.ou
     
     return(yhat)
  }
+######################################################
  
-
-#' Cross validation for Weighted Ridge Regresssion
+ 
+############ Cross validation for Weighted Ridge Regresssion Function ############
 #' Performs k-fold cross validation for weighted ridge regression.
 cv.wrr <- function(y = y, X = X,lambda = 10^seq(-8, 8, length.out = 100), k.folds = 10, 
                    kernel.type = c("Gaussian","linear","nonhompolynom","exponential", 
@@ -127,7 +133,7 @@ cv.wrr <- function(y = y, X = X,lambda = 10^seq(-8, 8, length.out = 100), k.fold
   rmse <- matrix(NA, nrow = k.folds, ncol = length(lambda))
   variable.weights <- matrix(NA, nrow = ncol(X), ncol = k.folds)
   
-  # k-fold cross-validation
+  ### k-fold cross-validation ###
   for (k in 1:k.folds) {
     
     ind <- (fold == k)    # Logical vector containing for the holdout sample
@@ -141,15 +147,14 @@ cv.wrr <- function(y = y, X = X,lambda = 10^seq(-8, 8, length.out = 100), k.fold
   
   rownames(variable.weights) <- colnames(X)
   
-  # predictive power
+ ### predictive power ###
   rmse <- (colSums((outer(y, rep(1, length(lambda))) - yhatu)^2)/length(y))^.5 
   
-  # optimal lambda and betahat
-  lambda.min <- lambda[which.min(rmse)]
+  lambda.min <- lambda[which.min(rmse)]  ## optimal lambda
   
   result <- (list(yhat = yhatu, rmse = rmse, lambda.min = lambda.min, lambda = lambda,
                   variable.weights = variable.weights, rmse.min = min(rmse), fold = fold))
   class(result) <- "cv.wrr"
   return(result)
 }
-
+######################################################
