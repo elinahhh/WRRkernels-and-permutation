@@ -1,5 +1,5 @@
 
-### Permutation Test for WRR Model
+######### Permutation Test for WRR Model #########
 permtest.wrr <- function(y, X, nPerm = 100, lambda = 1, 
                          center = TRUE, scale = TRUE, var.subset = NULL, ...){
   s <- stdize(X, center = center, scale = scale)
@@ -16,7 +16,7 @@ permtest.wrr <- function(y, X, nPerm = 100, lambda = 1,
   p.value     <- rep(NA, length(var.subset))
   
   
-  # Do the permutations
+  ### Excute permutation test ###
   for (j in var.subset){
     
     for (p in 1:nPerm){
@@ -24,14 +24,14 @@ permtest.wrr <- function(y, X, nPerm = 100, lambda = 1,
       ind <- sort(runif(nrow(X)), index.return = TRUE)$ix  
       X.perm   <- X
       X.perm[, j] <- X[ind, j]
-      res.perm <- wrr(y, X.perm, center = FALSE, scale = FALSE, lambda = lambda, ...)
+      res.perm <- wrr(y, X.perm, center = FALSE, scale = FALSE, lambda = lambda, ...) ## Use all varibles (with permuted values in j-th variable) for weighted kernel ridge regression function
       rmse.perm[j, p] <- (sum(y - res.perm$yhat)^2)/length(y)^.5
     }
     
-    res.minj <- wrr(y, X[, -j], center = FALSE, scale = FALSE, lambda = lambda, ...)
+    res.minj <- wrr(y, X[, -j], center = FALSE, scale = FALSE, lambda = lambda, ...) ## Use varibles except j-th variable for weighted kernel ridge regression function
     effect.size[j] <- sum(y - res.all$yhat)^2 / sum(y - res.minj$yhat)^2
     rmse.perm[j, nPerm + 1] <- (sum(y - res.all$yhat)^2)/length(y)^.5
-    p.value[j] <- 1 - sum(as.numeric(rmse.perm[j,] < rmse.perm[j, nPerm + 1]))/(nPerm + 1)
+    p.value[j] <- 1 - sum(as.numeric(rmse.perm[j,] < rmse.perm[j, nPerm + 1]))/(nPerm + 1) ## Calculte the p-value
   }  
   
   mat <- cbind(effect.size, p.value)
